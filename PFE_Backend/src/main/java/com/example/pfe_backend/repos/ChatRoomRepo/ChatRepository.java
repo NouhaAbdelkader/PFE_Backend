@@ -5,6 +5,7 @@ import com.example.pfe_backend.entities.notifixUser.NotifixUser;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.HashSet;
+import java.util.List;
 
 public interface ChatRepository extends JpaRepository<ChatRoom, Integer> {
     HashSet<ChatRoom> findChatRoomByReceiver(NotifixUser receiver);

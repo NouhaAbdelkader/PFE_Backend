@@ -6,6 +6,7 @@ import com.example.pfe_backend.entities.chatRoom.message;
 import com.example.pfe_backend.entities.notifixUser.NotifixUser;
 import com.example.pfe_backend.exceptions.CustomException;
 import com.example.pfe_backend.repos.ChatRoomRepo.ChatRepository;
+import com.example.pfe_backend.repos.ChatRoomRepo.MessageRepo;
 import com.example.pfe_backend.repos.NotifixUserRepo.NotifixUserRepo;
 import lombok.AllArgsConstructor;
 import org.slf4j.Logger;
@@ -20,158 +21,144 @@ import java.util.*;
 public class ChatServiceImpl {
     private NotifixUserRepo userRepository;
     private ChatRepository chatRepository;
-    private MediaServiceImpl mediaService ;
-    // private String text= "hello this jhon. you should work more . we are happy to see you. but i dont understand this. and i hate the way you act  ";
-
+    private MediaServiceImpl mediaService;
+    private MessageRepo messageRepository ;
     private static final Logger LOGGER = LoggerFactory.getLogger(ChatServiceImpl.class);
 
     public ChatRoom addChat(ChatRoom chat, Long idSender, Long idReceiver) {
+        LOGGER.info("Adding chat for senderId: {}, receiverId: {}", idSender, idReceiver);
         NotifixUser sender = userRepository.findNotifixUserByUserId(idSender);
         NotifixUser receiver = userRepository.findNotifixUserByUserId(idReceiver);
-        if (sender != null && receiver != null) {
-            chat.setSender(sender);
-            chat.setReceiver(receiver);
-            return chatRepository.save(chat);
+        if (sender == null) {
+            LOGGER.error("Sender not found with ID: {}", idSender);
+            throw new CustomException("Sender not found with ID: " + idSender);
         }
-        return null;
+        if (receiver == null) {
+            LOGGER.error("Receiver not found with ID: {}", idReceiver);
+            throw new CustomException("Receiver not found with ID: " + idReceiver);
+        }
+        chat.setSender(sender);
+        chat.setReceiver(receiver);
+        chat.setMessages(new ArrayList<>());
+        ChatRoom savedChat = chatRepository.save(chat);
+        LOGGER.info("Chat saved with ID: {}", savedChat.getId());
+        return savedChat;
     }
-
     public void deleteChatById(int id) {
         chatRepository.deleteById(id);
     }
 
     public ChatRoom getChatById(int id) {
-        return chatRepository.findById(id).orElse(null);
-
-
-
+        return chatRepository.findById(id).orElseThrow(() -> new RuntimeException());
     }
 
     public HashSet<ChatRoom> getChatsByUser(Long userId) throws ChatNotFoundException {
-        NotifixUser u= userRepository.findNotifixUserByUserId(userId);
-        HashSet<ChatRoom> chat = chatRepository.findChatRoomByReceiver(u);
-        HashSet<ChatRoom> chat1 = chatRepository.findChatRoomBySender(u);
-
-        chat1.addAll(chat);
-
-        if (chat.isEmpty() && chat1.isEmpty()) {
-            throw new ChatNotFoundException();
-        } else if (chat1.isEmpty()) {
-            return chat;
-        } else {
-            return chat1;
+        NotifixUser user = userRepository.findNotifixUserByUserId(userId);
+        if (user == null) {
+            throw new ChatNotFoundException( );
         }
-    }
-    public HashSet<ChatRoom> getChatsByUSenderIOrrReciver(Long userId,Long id) throws ChatNotFoundException {
-        NotifixUser u= userRepository.findNotifixUserByUserId(userId);
-        NotifixUser u2= userRepository.findNotifixUserByUserId(id);
-        return chatRepository.findBySenderOrReceiver(u,u2);
-    }
-
-    public ChatRoom getChatBySenderAndReceiver(Long idSender, Long idReceiver) {
-        NotifixUser sender = userRepository.findNotifixUserByUserId(idSender);
-        NotifixUser receiver = userRepository.findNotifixUserByUserId(idReceiver);
-        return chatRepository.findChatRoomBySenderAndReceiver(sender, receiver);
-
-    }
-    public ChatRoom getChatBySenderAndReceiver2( Long idReceiver,Long idSender) {
-        NotifixUser sender = userRepository.findNotifixUserByUserId(idSender);
-        NotifixUser receiver = userRepository.findNotifixUserByUserId(idReceiver);
-        return chatRepository.findChatRoomByReceiverAndSender(receiver,sender);
-
-    }
-
-
-    public ChatRoom addMessage(message message, int chatId, Long idSender) throws ChatNotFoundException, CustomException {
-        // Récupérer l'utilisateur expéditeur
-        NotifixUser sender = userRepository.findNotifixUserByUserId(idSender);
-        if (sender == null) {
-            throw new CustomException("User not found with ID: " + idSender);
+        HashSet<ChatRoom> chats = new HashSet<>();
+        chats.addAll(chatRepository.findChatRoomBySender(user));
+        chats.addAll(chatRepository.findChatRoomByReceiver(user));
+        if (chats.isEmpty()) {
+            throw new ChatNotFoundException( );
         }
-        if (chatId == 0) {
-            throw new CustomException("chat not found with ID: " + chatId);
+        return chats;
+    }
+
+    public ChatRoom getChatBetweenUsers(Long userId1, Long userId2) {
+        NotifixUser user1 = userRepository.findNotifixUserByUserId(userId1);
+        NotifixUser user2 = userRepository.findNotifixUserByUserId(userId2);
+        if (user1 == null || user2 == null) {
+            return null;
         }
 
-        // Récupérer la salle de discussion
-        Optional<ChatRoom> chatOptional = chatRepository.findById(chatId);
-        ChatRoom chatRoom = chatOptional.orElseThrow(ChatNotFoundException::new);
+        ChatRoom chatRoom = chatRepository.findChatRoomBySenderAndReceiver(user1, user2);
+        if (chatRoom != null) {
+            return chatRoom;
+        }
+        return chatRepository.findChatRoomBySenderAndReceiver(user2, user1);
+    }
 
-        // Assurer que le message a un expéditeur et une heure valide
+    public ChatRoom addMessage(message message, int chatId, Long senderId) throws ChatNotFoundException {
+        ChatRoom chatRoom = chatRepository.findById(chatId)
+                .orElseThrow(() -> new CustomException("Chat not found with ID: " + chatId));
 
+        if (message.getTime() == null) {
+            message.setTime(new Date());
+        }
+        if (message.getChatRoom() == null) {
+            message.setChatRoom(chatRoom);
+        }
 
-        // Ajouter le message à la salle de discussion
-        List<com.example.pfe_backend.entities.chatRoom.message> messages = chatRoom.getMessages();
+        List<message> messages = chatRoom.getMessages();
         if (messages == null) {
             messages = new ArrayList<>();
         }
-        message.setSendermessage(sender.getNom()+ " "+ sender.getPrenom() );
-        message.setTime(new Date());
         messages.add(message);
         chatRoom.setMessages(messages);
 
-        // Sauvegarder la salle de discussion mise à jour
         ChatRoom savedChatRoom = chatRepository.save(chatRoom);
-
-
-        // Logging
-        LOGGER.debug("Message added to chat room: {}", savedChatRoom.getId());
-        LOGGER.debug("Sender: {}", sender);
-
+        LOGGER.info("Message added to chat room: {}", savedChatRoom.getId());
         return savedChatRoom;
     }
 
-    public ChatRoom addMediaMessage(message message, int chatId, MultipartFile image, String fileType, Long userId, MediaType mediaType) throws ChatNotFoundException, CustomException {
-        // Récupérer l'utilisateur expéditeur
-        NotifixUser sender = userRepository.findNotifixUserByUserId(userId);
-        if (sender == null) {
-            throw new CustomException("User not found with ID: " + userId);
+    public ChatRoom addMediaMessage(message message, int chatId, MultipartFile image, String fileType, Long userId, MediaType mediaType) throws ChatNotFoundException {
+        ChatRoom chatRoom = chatRepository.findById(chatId)
+                .orElseThrow(() -> new ChatNotFoundException());
+
+        if (message.getTime() == null) {
+            message.setTime(new Date());
         }
-        if (chatId == 0) {
-            throw new ChatNotFoundException();
+        if (message.getChatRoom() == null) {
+            message.setChatRoom(chatRoom);
         }
 
-        // Récupérer la salle de discussion
-        Optional<ChatRoom> chatOptional = chatRepository.findById(chatId);
-        ChatRoom chatRoom = chatOptional.orElseThrow(ChatNotFoundException::new);
-
-        // Assurer que le message a un expéditeur et une heure valide
-        message.setSendermessage(sender.getNom()+ " "+ sender.getPrenom());
-        message.setTime(new Date());
-
-        // Ajouter le média au message
         String uploadedMediaId = null;
         try {
-            uploadedMediaId = this.mediaService.uploadMessageMedia(chatId, image, mediaType, userId, fileType);
+            uploadedMediaId = mediaService.uploadMessageMedia(chatId, image, mediaType, userId, fileType);
+            message.setReplyMedia(uploadedMediaId);
         } catch (Exception e) {
-            // Gérer l'exception, par exemple, journalisation ou traitement spécifique
-            // Vous pouvez remplacer cette gestion d'erreur par celle qui convient à votre cas
-            e.printStackTrace();
-
+            LOGGER.error("Error uploading media: {}", e.getMessage(), e);
+            throw new CustomException("Failed to upload media.");
         }
-        message.setReplyMedia(uploadedMediaId);
-        message.setReplymessage(null);
 
-        // Ajouter le message à la salle de discussion
-        List<com.example.pfe_backend.entities.chatRoom.message> messages = chatRoom.getMessages();
+        List<message> messages = chatRoom.getMessages();
         if (messages == null) {
             messages = new ArrayList<>();
         }
         messages.add(message);
         chatRoom.setMessages(messages);
 
-        // Sauvegarder la salle de discussion mise à jour
         ChatRoom savedChatRoom = chatRepository.save(chatRoom);
-
-        // Logging
-        LOGGER.debug("Message with media added to chat room: {}", savedChatRoom.getId());
-        LOGGER.debug("Sender: {}", sender);
-
+        LOGGER.info("Media message added to chat room: {}", savedChatRoom.getId());
         return savedChatRoom;
     }
+    public List<message> markMessagesAsSeen(Integer chatId, Long userId) {
+        LOGGER.info("Marking messages as seen for chatId: {}, userId: {}", chatId, userId);
+        ChatRoom chatRoom = chatRepository.findById(chatId)
+                .orElseThrow(() -> new CustomException("Chat not found with ID: " + chatId));
 
+        NotifixUser user = userRepository.findNotifixUserByUserId(userId);
+        if (userId == null) {
+            LOGGER.error("User not found with ID: {}", userId);
+            throw new CustomException("User not found with ID: " + userId);
+        }
+
+        // Trouver les messages non lus
+        List<message> unreadMessages = messageRepository.findUnreadMessagesByChatRoomAndUser(chatId, userId);
+
+        // Marquer chaque message comme lus
+        for (message message : unreadMessages) {
+            List<Long> seenBy = message.getSeenBy();
+            if (!seenBy.contains(userId)) {
+                seenBy.add(userId);
+                message.setSeenBy(seenBy);
+                messageRepository.save(message);
+                LOGGER.info("Message ID {} marked as seen by userId: {}", message.getId(), userId);
+            }
+        }
+
+        return unreadMessages; // Retourner les messages marqués pour notification
+    }
 }
-
-
-
-
-
