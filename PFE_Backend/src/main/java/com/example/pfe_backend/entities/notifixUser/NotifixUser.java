@@ -43,4 +43,6 @@ public class NotifixUser implements Serializable {
     @Enumerated(EnumType.STRING)
 
    private Status status;
+    @Column(name = "photo", columnDefinition = "MEDIUMTEXT")
+    private String photo;
 }

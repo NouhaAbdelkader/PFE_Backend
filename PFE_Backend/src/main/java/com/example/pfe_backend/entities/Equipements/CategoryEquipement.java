@@ -4,7 +4,6 @@ public enum CategoryEquipement {
     POTEAU,
     CABLE,
     TRAPPE,
-    DOMMAGE_BTP,
     ARMOIRE,
     COFFRET
 }

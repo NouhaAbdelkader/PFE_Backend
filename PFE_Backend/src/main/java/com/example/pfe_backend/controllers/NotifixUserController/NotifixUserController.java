@@ -5,6 +5,8 @@ import com.example.pfe_backend.Configurations.JWT.JwtUtils;
 import com.example.pfe_backend.Configurations.JWT.LoginRequest;
 import com.example.pfe_backend.Configurations.JWT.RefreshTokenRequest;
 import com.example.pfe_backend.entities.notifixUser.NotifixUser;
+import com.example.pfe_backend.entities.notifixUser.Role;
+import com.example.pfe_backend.entities.notifixUser.Status;
 import com.example.pfe_backend.exceptions.CustomException;
 import com.example.pfe_backend.services.NotifixUserservice.NotifixUserService;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -17,10 +19,12 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/users")
 @AllArgsConstructor
+@CrossOrigin(origins = "http://localhost:4200")
 public class NotifixUserController {
 
     private final NotifixUserService notifixUserService;
@@ -73,7 +77,14 @@ public class NotifixUserController {
         }
     }
 
-
+    @GetMapping("/{id}")
+    public ResponseEntity<NotifixUser> getUserById(@PathVariable Long id) {
+        try {
+            NotifixUser user = notifixUserService.getUserByid(id);
+            return ResponseEntity.ok(user);
+        }  catch (Exception e)  {
+            return ResponseEntity.status(500).body(null);
+        }  }
 
     // Create new Notifix user
     @PostMapping("/add")
@@ -123,6 +134,61 @@ public class NotifixUserController {
     public ResponseEntity<?> logout(@RequestParam String email) {
         notifixUserService.logout(email);
         return ResponseEntity.ok("Logout successful and status set to INACTIVE");
+    }
+    @GetMapping("/technicians")
+    public ResponseEntity<List<NotifixUser>> getTechnicians() {
+        try {
+            List<NotifixUser> technicians = notifixUserService.findByRole(Role.TECHNICIAN);
+            return ResponseEntity.ok(technicians);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(null);
+        }
+    }
+
+    @PutMapping("/{userId}/photo")
+    public ResponseEntity<?> updatePhoto(@PathVariable Long userId, @RequestBody Map<String, String> requestBody) {
+        try {
+            String base64Photo = requestBody.get("photo");
+            if (base64Photo == null || base64Photo.trim().isEmpty()) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body("Photo is required");
+            }
+            NotifixUser updatedUser = notifixUserService.updateUserPhoto(userId, base64Photo);
+            return ResponseEntity.ok(updatedUser);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body("Failed to update photo: " + e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("An unexpected error occurred: " + e.getMessage());
+        }
+    }
+
+
+    @GetMapping("/filter")
+    public ResponseEntity<List<NotifixUser>> filterUsers(
+            @RequestParam(required = false) String email,
+            @RequestParam(required = false) String nom,
+            @RequestParam(required = false) String prenom,
+            @RequestParam(required = false) Status status,
+            @RequestParam(required = false) Boolean pending,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "6") int size
+    ) {
+        List<NotifixUser> users = notifixUserService.fetchFilteredUsers(email, nom, prenom, status, pending, page, size);
+        return ResponseEntity.ok(users);
+    }
+
+    @GetMapping("/filter/count")
+    public ResponseEntity<Long> countFilteredUsers(
+            @RequestParam(required = false) String email,
+            @RequestParam(required = false) String nom,
+            @RequestParam(required = false) String prenom,
+            @RequestParam(required = false) Status status,
+            @RequestParam(required = false) Boolean pending
+    ) {
+        long count = notifixUserService.countFilteredUsers(email, nom, prenom, status, pending);
+        return ResponseEntity.ok(count);
     }
 
 }
